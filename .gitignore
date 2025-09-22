@@ -15,7 +15,6 @@ __pycache__
 log.txt
 /dump.dat
 /lock.file
-settings.json
 /lang/English.json
 # AppImage
 /AppDir

@@ -17,7 +17,6 @@ from constants import CALL, GQL_OPERATIONS, ONLINE_DELAY, URLType
 
 if TYPE_CHECKING:
     from twitch import Twitch
-    from gui import ChannelList
     from constants import JsonType, GQLOperation
 
 
@@ -139,7 +138,7 @@ class Stream:
 
 class Channel:
     __slots__ = (
-        "_twitch", "_gui_channels", "id", "_login", "_display_name", "_spade_url",
+        "_twitch", "id", "_login", "_display_name", "_spade_url",
         "_stream", "_pending_stream_up", "acl_based"
     )
 
@@ -153,7 +152,6 @@ class Channel:
         acl_based: bool = False,
     ):
         self._twitch: Twitch = twitch
-        self._gui_channels: ChannelList = twitch.gui.channels
         self.id: int = int(id)
         self._login: str = login
         self._display_name: str | None = display_name
@@ -270,13 +268,22 @@ class Channel:
         return False
 
     def display(self, *, add: bool = False):
-        self._gui_channels.display(self, add=add)
+        # For CLI version, we log channel status instead of updating GUI
+        status = "ONLINE" if self.online else ("PENDING" if self.pending_online else "OFFLINE")
+        game_info = f" | Game: {self.game.name}" if self.game else ""
+        viewers_info = f" | Viewers: {self.viewers}" if self.viewers is not None else ""
+        drops_info = " | Drops: ✔" if self.drops_enabled else " | Drops: ❌"
+        acl_info = " | ACL" if self.acl_based else ""
+        
+        logger.debug(
+            f"Channel: {self.name} | Status: {status}{game_info}{viewers_info}{drops_info}{acl_info}"
+        )
 
     def remove(self):
         if self._pending_stream_up is not None:
             self._pending_stream_up.cancel()
             self._pending_stream_up = None
-        self._gui_channels.remove(self)
+        logger.debug(f"Removed channel: {self.name}")
 
     async def get_spade_url(self) -> URLType:
         """
@@ -473,6 +480,12 @@ class Channel:
             async with self._twitch.request(
                 "POST", self._spade_url, data=self._stream._spade_payload
             ) as response:
-                return response.status == 204
+                success = response.status == 204
+                if success:
+                    logger.debug(f"Successfully sent watch payload to: {self.name}")
+                else:
+                    logger.warning(f"Failed to send watch payload to: {self.name} (status: {response.status})")
+                return success
         except RequestException:
+            logger.warning(f"Request exception while sending watch payload to: {self.name}")
             return False

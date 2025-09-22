@@ -105,7 +105,8 @@ class BaseDrop:
         return all(campaign.timed_drops[pid].is_claimed for pid in self.precondition_drops)
 
     def _on_state_changed(self) -> None:
-        raise NotImplementedError
+        # For CLI version, we just log the state change instead of updating GUI
+        pass
 
     def _base_earn_conditions(self) -> bool:
         # define when a drop can be earned or not
@@ -169,16 +170,15 @@ class BaseDrop:
         if result:
             self.is_claimed = result
             claim_text = (
-                f"{self.campaign.game.name}\n"
+                f"{self.campaign.game.name}: "
                 f"{self.rewards_text()} "
                 f"({self.campaign.claimed_drops}/{self.campaign.total_drops})"
             )
-            # two different claim texts, becase a new line after the game name
-            # looks ugly in the output window - replace it with a space
+            # Log the claimed drop
             self._twitch.print(
-                _("status", "claimed_drop").format(drop=claim_text.replace('\n', ' '))
+                _("status", "claimed_drop").format(drop=claim_text)
             )
-            self._twitch.gui.tray.notify(claim_text, _("gui", "tray", "notification_title"))
+            logger.info(f"Successfully claimed drop: {claim_text}")
         else:
             logger.error(f"Drop claim has potentially failed! Drop ID: {self.id}")
         return result
@@ -295,7 +295,10 @@ class TimedDrop(BaseDrop):
         )
 
     def _on_state_changed(self) -> None:
-        self._twitch.gui.inv.update_drop(self)
+        # For CLI version, log progress updates instead of updating GUI
+        if self.can_earn():
+            progress_text = f"{self.name}: {self.current_minutes}/{self.required_minutes} min ({self.progress:.1%})"
+            logger.debug(f"Drop progress: {progress_text}")
 
     def _update_real_minutes(self, delta: int) -> None:
         if delta == 0 or self.real_current_minutes + delta < 0 or not self.can_earn():
@@ -324,7 +327,18 @@ class TimedDrop(BaseDrop):
         return result
 
     def display(self, *, countdown: bool = True, subone: bool = False):
-        self._twitch.gui.display_drop(self, countdown=countdown, subone=subone)
+        # For CLI version, just log the current drop being worked on
+        if self.can_earn():
+            remaining_hours = self.remaining_minutes // 60
+            remaining_mins = self.remaining_minutes % 60
+            time_remaining = f"{remaining_hours:02d}:{remaining_mins:02d}"
+            
+            logger.info(
+                f"Mining drop: {self.name} | "
+                f"Progress: {self.current_minutes}/{self.required_minutes} min ({self.progress:.1%}) | "
+                f"Remaining: {time_remaining} | "
+                f"Game: {self.campaign.game.name}"
+            )
 
     def update_minutes(self, new_minutes: int):
         delta: int = new_minutes - self.real_current_minutes

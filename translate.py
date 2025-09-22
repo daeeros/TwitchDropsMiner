@@ -58,34 +58,6 @@ class GUIStatus(TypedDict):
     adding_campaigns: str
 
 
-class GUITabs(TypedDict):
-    main: str
-    inventory: str
-    settings: str
-    help: str
-
-
-class GUITray(TypedDict):
-    notification_title: str
-    minimize: str
-    show: str
-    quit: str
-
-
-class GUILoginForm(TypedDict):
-    name: str
-    labels: str
-    logging_in: str
-    logged_in: str
-    logged_out: str
-    request: str
-    required: str
-    username: str
-    password: str
-    twofa_code: str
-    button: str
-
-
 class GUIWebsocket(TypedDict):
     name: str
     websocket: str
@@ -97,117 +69,9 @@ class GUIWebsocket(TypedDict):
     reconnecting: str
 
 
-class GUIProgress(TypedDict):
-    name: str
-    drop: str
-    game: str
-    campaign: str
-    remaining: str
-    drop_progress: str
-    campaign_progress: str
-
-
-class GUIChannelHeadings(TypedDict):
-    channel: str
-    status: str
-    game: str
-    viewers: str
-
-
-class GUIChannels(TypedDict):
-    name: str
-    switch: str
-    online: str
-    pending: str
-    offline: str
-    headings: GUIChannelHeadings
-
-
-class GUIInvFilter(TypedDict):
-    name: str
-    show: str
-    not_linked: str
-    upcoming: str
-    expired: str
-    excluded: str
-    finished: str
-    refresh: str
-
-
-class GUIInvStatus(TypedDict):
-    linked: str
-    not_linked: str
-    active: str
-    expired: str
-    upcoming: str
-    claimed: str
-    ready_to_claim: str
-
-
-class GUIInventory(TypedDict):
-    filter: GUIInvFilter
-    status: GUIInvStatus
-    starts: str
-    ends: str
-    allowed_channels: str
-    all_channels: str
-    and_more: str
-    percent_progress: str
-    minutes_progress: str
-
-
-class GUISettingsGeneral(TypedDict):
-    name: str
-    autostart: str
-    tray: str
-    tray_notifications: str
-    dark_mode: str
-    priority_mode: str
-    proxy: str
-
-
-class GUIPriorityModes(TypedDict):
-    priority_only: str
-    ending_soonest: str
-    low_availability: str
-
-
-class GUISettings(TypedDict):
-    general: GUISettingsGeneral
-    priority_modes: GUIPriorityModes
-    game_name: str
-    priority: str
-    exclude: str
-    reload: str
-    reload_text: str
-
-
-class GUIHelpLinks(TypedDict):
-    name: str
-    inventory: str
-    campaigns: str
-
-
-class GUIHelp(TypedDict):
-    links: GUIHelpLinks
-    how_it_works: str
-    how_it_works_text: str
-    getting_started: str
-    getting_started_text: str
-
-
 class GUIMessages(TypedDict):
-    output: str
     status: GUIStatus
-    tabs: GUITabs
-    tray: GUITray
-    login: GUILoginForm
     websocket: GUIWebsocket
-    progress: GUIProgress
-    channels: GUIChannels
-    inventory: GUIInventory
-    settings: GUISettings
-    help: GUIHelp
 
 
 class Translation(TypedDict):
@@ -258,7 +122,6 @@ default_translation: Translation = {
         "no_connection": "Cannot connect to Twitch, retrying in {seconds} seconds...",
     },
     "gui": {
-        "output": "Output",
         "status": {
             "name": "Status",
             "idle": "Idle",
@@ -271,31 +134,6 @@ default_translation: Translation = {
             "fetching_campaigns": "Fetching campaigns...",
             "adding_campaigns": "Adding campaigns to inventory... {counter}",
         },
-        "tabs": {
-            "main": "Main",
-            "inventory": "Inventory",
-            "settings": "Settings",
-            "help": "Help",
-        },
-        "tray": {
-            "notification_title": "Mined Drop",
-            "minimize": "Minimize to Tray",
-            "show": "Show",
-            "quit": "Quit",
-        },
-        "login": {
-            "name": "Login Form",
-            "labels": "Status:\nUser ID:",
-            "logged_in": "Logged in",
-            "logged_out": "Logged out",
-            "logging_in": "Logging in...",
-            "required": "Login required",
-            "request": "Please log in to continue.",
-            "username": "Username",
-            "password": "Password",
-            "twofa_code": "2FA code (optional)",
-            "button": "Login",
-        },
         "websocket": {
             "name": "Websocket Status",
             "websocket": "Websocket #{id}:",
@@ -305,115 +143,6 @@ default_translation: Translation = {
             "connecting": "Connecting...",
             "disconnecting": "Disconnecting...",
             "reconnecting": "Reconnecting...",
-        },
-        "progress": {
-            "name": "Campaign Progress",
-            "drop": "Drop:",
-            "game": "Game:",
-            "campaign": "Campaign:",
-            "remaining": "{time} remaining",
-            "drop_progress": "Progress:",
-            "campaign_progress": "Progress:",
-        },
-        "channels": {
-            "name": "Channels",
-            "switch": "Switch",
-            "online": "ONLINE  ✔",
-            "pending": "OFFLINE ⏳",
-            "offline": "OFFLINE ❌",
-            "headings": {
-                "channel": "Channel",
-                "status": "Status",
-                "game": "Game",
-                "viewers": "Viewers",
-            },
-        },
-        "inventory": {
-            "filter": {
-                "name": "Filter",
-                "show": "Show:",
-                "not_linked": "Not linked",
-                "upcoming": "Upcoming",
-                "expired": "Expired",
-                "excluded": "Excluded",
-                "finished": "Finished",
-                "refresh": "Refresh",
-            },
-            "status": {
-                "linked": "Linked ✔",
-                "not_linked": "Not Linked ❌",
-                "active": "Active ✔",
-                "upcoming": "Upcoming ⏳",
-                "expired": "Expired ❌",
-                "claimed": "Claimed ✔",
-                "ready_to_claim": "Ready to claim ⏳",
-            },
-            "starts": "Starts: {time}",
-            "ends": "Ends: {time}",
-            "allowed_channels": "Allowed Channels:",
-            "all_channels": "All",
-            "and_more": "and {amount} more...",
-            "percent_progress": "{percent} of {minutes} minutes",
-            "minutes_progress": "{minutes} minutes",
-        },
-        "settings": {
-            "general": {
-                "name": "General",
-                "autostart": "Autostart: ",
-                "tray": "Autostart into tray: ",
-                "tray_notifications": "Tray notifications: ",
-                "dark_mode": "Dark mode: ",
-                "priority_mode": "Priority mode: ",
-                "proxy": "Proxy (requires restart):",
-            },
-            "priority_modes": {
-                "priority_only": "Priority list only",
-                "ending_soonest": "Ending soonest",
-                "low_availability": "Low availability first",
-            },
-            "game_name": "Game name",
-            "priority": "Priority",
-            "exclude": "Exclude",
-            "reload": "Reload",
-            "reload_text": "Most changes require a reload to take an immediate effect: ",
-        },
-        "help": {
-            "links": {
-                "name": "Useful Links",
-                "inventory": "See Twitch inventory",
-                "campaigns": "See all campaigns and manage account links",
-            },
-            "how_it_works": "How It Works",
-            "how_it_works_text": (
-                "Every several seconds, the application pretends to watch a particular stream "
-                "by fetching stream metadata - this is enough to advance the drops. "
-                "Note that this completely bypasses the need to download "
-                "any actual stream of video and sound. "
-                "To keep the status (ONLINE or OFFLINE) of the channels up-to-date, "
-                "there's a websocket connection established that receives events about streams "
-                "going up or down, or updates regarding the current number of viewers."
-            ),
-            "getting_started": "Getting Started",
-            "getting_started_text": (
-                "1. Login to the application.\n"
-                "2. Ensure your Twitch account is linked to all campaigns "
-                "you're interested in mining.\n"
-                "3. If you're interested in mining everything possible, "
-                "change the Priority Mode to anything other than \"Priority list only\" "
-                "and press on \"Reload\".\n"
-                "4. If you want to mine specific games first, use the \"Priority\" list "
-                "to set up an ordered list of games of your choice. "
-                "Games from the top of the list will be attempted to be mined first, "
-                "before the ones lower down the list.\n"
-                "5. Keep the \"Priority mode\" selected as \"Priority list only\", "
-                "to avoid mining games that are not on the priority list. "
-                "Or not - it's up to you.\n"
-                "6. Use the \"Exclude\" list to tell the application "
-                "which games should never be mined.\n"
-                "7. Changing the contents of either of the lists, or changing "
-                "the \"Priority mode\", requires you to press on \"Reload\" "
-                "for the changes to take an effect."
-            ),
         },
     },
 }

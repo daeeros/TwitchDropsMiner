@@ -6,7 +6,6 @@ from multiprocessing import freeze_support
 
 if __name__ == "__main__":
     freeze_support()
-    import io
     import sys
     import signal
     import asyncio
@@ -14,8 +13,6 @@ if __name__ == "__main__":
     import argparse
     import warnings
     import traceback
-    import tkinter as tk
-    from tkinter import messagebox
     from typing import NoReturn, TYPE_CHECKING
 
     import truststore
@@ -26,11 +23,11 @@ if __name__ == "__main__":
     from settings import Settings
     from version import __version__
     from exceptions import CaptchaRequired
-    from utils import lock_file, resource_path, set_root_icon
+    from utils import lock_file
     from constants import LOGGING_LEVELS, SELF_PATH, FILE_FORMATTER, LOG_PATH, LOCK_PATH
 
     if TYPE_CHECKING:
-        from _typeshed import SupportsWrite
+        pass
 
     warnings.simplefilter("default", ResourceWarning)
 
@@ -40,27 +37,11 @@ if __name__ == "__main__":
     if sys.version_info < (3, 10):
         raise RuntimeError("Python 3.10 or higher is required")
 
-    class Parser(argparse.ArgumentParser):
-        def __init__(self, *args, **kwargs) -> None:
-            super().__init__(*args, **kwargs)
-            self._message: io.StringIO = io.StringIO()
-
-        def _print_message(self, message: str, file: SupportsWrite[str] | None = None) -> None:
-            self._message.write(message)
-            # print(message, file=self._message)
-
-        def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
-            try:
-                super().exit(status, message)  # sys.exit(2)
-            finally:
-                messagebox.showerror("Argument Parser Error", self._message.getvalue())
-
     class ParsedArgs(argparse.Namespace):
         _verbose: int
         _debug_ws: bool
         _debug_gql: bool
         log: bool
-        tray: bool
         dump: bool
 
         # TODO: replace int with union of literal values once typeshed updates
@@ -90,20 +71,12 @@ if __name__ == "__main__":
             return logging.NOTSET
 
     # handle input parameters
-    # NOTE: parser output is shown via message box
-    # we also need a dummy invisible window for the parser
-    root = tk.Tk()
-    root.overrideredirect(True)
-    root.withdraw()
-    set_root_icon(root, resource_path("icons/pickaxe.ico"))
-    root.update()
-    parser = Parser(
+    parser = argparse.ArgumentParser(
         SELF_PATH.name,
         description="A program that allows you to mine timed drops on Twitch.",
     )
     parser.add_argument("--version", action="version", version=f"v{__version__}")
     parser.add_argument("-v", dest="_verbose", action="count", default=0)
-    parser.add_argument("--tray", action="store_true")
     parser.add_argument("--log", action="store_true")
     parser.add_argument("--dump", action="store_true")
     # undocumented debug args
@@ -114,22 +87,18 @@ if __name__ == "__main__":
         "--debug-gql", dest="_debug_gql", action="store_true", help=argparse.SUPPRESS
     )
     args = parser.parse_args(namespace=ParsedArgs())
+    
     # load settings
     try:
         settings = Settings(args)
     except Exception:
-        messagebox.showerror(
-            "Settings error",
-            f"There was an error while loading the settings file:\n\n{traceback.format_exc()}"
-        )
+        print(f"Settings error: {traceback.format_exc()}", file=sys.stderr)
         sys.exit(4)
-    # dummy window isn't needed anymore
-    root.destroy()
-    # get rid of unneeded objects
-    del root, parser
 
     # client run
     async def main():
+        print("Application starting...")  # Тестовое сообщение
+        
         # set language
         try:
             _.set_language(settings.language)
@@ -138,56 +107,85 @@ if __name__ == "__main__":
             pass
 
         # handle logging stuff
-        if settings.logging_level > logging.DEBUG:
-            # redirect the root logger into a NullHandler, effectively ignoring all logging calls
-            # that aren't ours. This always runs, unless the main logging level is DEBUG or lower.
-            logging.getLogger().addHandler(logging.NullHandler())
         logger = logging.getLogger("TwitchDrops")
         logger.setLevel(settings.logging_level)
+        
+        # Clear any existing handlers to avoid conflicts
+        logger.handlers.clear()
+        
+        # Setup console handler for CLI output
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(logging.Formatter(
+            "{asctime} {levelname}: {message}",
+            style='{',
+            datefmt="%H:%M:%S"
+        ))
+        logger.addHandler(console_handler)
+        
         if settings.log:
             handler = logging.FileHandler(LOG_PATH)
             handler.setFormatter(FILE_FORMATTER)
             logger.addHandler(handler)
+            
+        # Disable root logger to prevent double messages
+        if settings.logging_level > logging.DEBUG:
+            logging.getLogger().setLevel(logging.WARNING)
+        else:
+            logging.getLogger().setLevel(logging.DEBUG)
+            
         logging.getLogger("TwitchDrops.gql").setLevel(settings.debug_gql)
         logging.getLogger("TwitchDrops.websocket").setLevel(settings.debug_ws)
+
+        if (logging_level := logger.getEffectiveLevel()) < logging.ERROR:
+            logger.info(f"Logging level: {logging.getLevelName(logging_level)}")
 
         exit_status = 0
         client = Twitch(settings)
         loop = asyncio.get_running_loop()
-        if sys.platform == "linux":
-            loop.add_signal_handler(signal.SIGINT, lambda *_: client.gui.close())
-            loop.add_signal_handler(signal.SIGTERM, lambda *_: client.gui.close())
+        
+        # Setup signal handlers for clean shutdown
+        def signal_handler():
+            logger.info("Received shutdown signal, stopping...")
+            client.close()
+            
+        if sys.platform != "win32":
+            loop.add_signal_handler(signal.SIGINT, signal_handler)
+            loop.add_signal_handler(signal.SIGTERM, signal_handler)
+        else:
+            # На Windows используем обработчик KeyboardInterrupt
+            def keyboard_interrupt_handler():
+                try:
+                    loop.run_forever()
+                except KeyboardInterrupt:
+                    signal_handler()
+            
         try:
+            logger.info("Starting Twitch Drops Miner...")
+            logger.info("Use Ctrl+C to stop the application")
             await client.run()
         except CaptchaRequired:
             exit_status = 1
             client.prevent_close()
-            client.print(_("error", "captcha"))
+            logger.error(_("error", "captcha"))
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
         except Exception:
             exit_status = 1
             client.prevent_close()
-            client.print("Fatal error encountered:\n")
-            client.print(traceback.format_exc())
+            logger.error("Fatal error encountered:")
+            logger.error(traceback.format_exc())
         finally:
-            if sys.platform == "linux":
+            if sys.platform != "win32":
                 loop.remove_signal_handler(signal.SIGINT)
                 loop.remove_signal_handler(signal.SIGTERM)
-            client.print(_("gui", "status", "exiting"))
+            logger.info(_("gui", "status", "exiting"))
             await client.shutdown()
-        if not client.gui.close_requested:
-            # user didn't request the closure
-            client.gui.tray.change_icon("error")
-            client.print(_("status", "terminated"))
-            client.gui.status.update(_("gui", "status", "terminated"))
-            # notify the user about the closure
-            client.gui.grab_attention(sound=True)
-        await client.gui.wait_until_closed()
+            
+        if not client.close_requested:
+            logger.info(_("status", "terminated"))
+            
         # save the application state
-        # NOTE: we have to do it after wait_until_closed,
-        # because the user can alter some settings between app termination and closing the window
         client.save(force=True)
-        client.gui.stop()
-        client.gui.close_window()
         sys.exit(exit_status)
 
     try:
@@ -195,8 +193,17 @@ if __name__ == "__main__":
         success, file = lock_file(LOCK_PATH)
         if not success:
             # already running - exit
+            print("Application is already running", file=sys.stderr)
             sys.exit(3)
 
-        asyncio.run(main())
+        if sys.platform == "win32":
+            # На Windows запускаем через отдельный обработчик для Ctrl+C
+            try:
+                asyncio.run(main())
+            except KeyboardInterrupt:
+                print("\nInterrupted by user")
+                sys.exit(0)
+        else:
+            asyncio.run(main())
     finally:
         file.close()

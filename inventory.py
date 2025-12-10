@@ -423,7 +423,7 @@ class DropsCampaign:
     @property
     def eligible(self) -> bool:
         return self.linked or self.has_badge_or_emote
-    
+
     @cached_property
     def has_badge_or_emote(self) -> bool:
         return any(
@@ -475,18 +475,19 @@ class DropsCampaign:
     def _base_can_earn(
         self, channel: Channel | None = None, ignore_channel_status: bool = False
     ) -> bool:
-        campaign = self.campaign
         return (
-            self._base_earn_conditions()
-            and campaign.eligible
-            and campaign.active
+            self.eligible  # account is eligible
+            and self.active  # campaign is active (and valid)
             and (
-                channel is None or (
-                    (not campaign.allowed_channels or channel in campaign.allowed_channels)
+                channel is None or (  # channel isn't specified,
+                    # or there's no ACL, or the channel is in the ACL
+                    (not self.allowed_channels or channel in self.allowed_channels)
+                    # and the channel is live and playing the campaign's game,
+                    # or this campaign can be earned anywhere (special game)
                     and (
                         ignore_channel_status
-                        or channel.game is not None and channel.game == campaign.game
-                        or campaign.game.is_special_events()
+                        or channel.game is not None and channel.game == self.game
+                        or self.game.is_special_events()
                     )
                 )
             )

@@ -117,25 +117,12 @@ class BaseDrop:
             and (bool(self.benefits) or self.id in self.campaign.preconditions_chain())
         )
 
-    def _base_can_earn(
-        self, channel: Channel | None = None, ignore_channel_status: bool = False
-    ) -> bool:
+    def _base_can_earn(self) -> bool:
+        # cross-participates in can_earn and can_earn_within handling, where a timeframe is added
         return (
-            self.eligible  # account is eligible
-            and self.active  # campaign is active (and valid)
-            and (
-                channel is None or (  # channel isn't specified,
-                    # or there's no ACL, or the channel is in the ACL
-                    (not self.allowed_channels or channel in self.allowed_channels)
-                    # and the channel is live and playing the campaign's game,
-                    # or this campaign can be earned anywhere (special game)
-                    and (
-                        ignore_channel_status
-                        or channel.game is not None and channel.game == self.game
-                        or self.game.is_special_events()
-                    )
-                )
-            )
+            self._base_earn_conditions()
+            # is within the timeframe
+            and self.starts_at <= datetime.now(timezone.utc) < self.ends_at
         )
 
     def _can_earn_within(self, stamp: datetime) -> bool:

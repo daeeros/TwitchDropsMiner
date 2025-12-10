@@ -800,17 +800,21 @@ class Twitch:
         """
         Determines if the given channel qualifies as a watching candidate.
         """
-        if not self.wanted_games:
+        # exit early if stream is offline
+        if not channel.online:
             return False
-        # exit early if stream is offline or drops aren't enabled
-        if not channel.online or not channel.drops_enabled:
-            return False
-        # check if we can progress any campaign for the played game
-        if channel.game is None or channel.game not in self.wanted_games:
-            return False
-        
         for campaign in self.inventory:
-            if campaign.can_earn(channel):
+            if (
+                campaign.can_earn(channel)  # let the campaign do the "special games" check
+                and (
+                    # limit watching to the games the user wants
+                    channel.game is not None
+                    and channel.drops_enabled
+                    and channel.game in self.wanted_games
+                    # let the campaign ignore all channel-related checks
+                    or campaign.game.is_special_events()
+                )
+            ):
                 return True
         return False
 
@@ -1249,7 +1253,7 @@ class Twitch:
                             drop_data["self"]["dropInstanceID"] = "..."
                 json.dump(dump_data, file, indent=4, sort_keys=True)
                 file.write("\n\n")  # add 2x new line spacer
-                json.dump(claimed_benefits, file, indent=4, sort_keys=True, default=str)
+                json.dump(inventory["gameEventDrops"], file, indent=4, sort_keys=True, default=str)
 
         # use the merged data to create campaign objects
         campaigns: list[DropsCampaign] = [

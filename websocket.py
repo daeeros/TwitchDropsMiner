@@ -14,6 +14,7 @@ from exceptions import MinerException, WebsocketClosed
 from constants import PING_INTERVAL, PING_TIMEOUT, MAX_WEBSOCKETS, WS_TOPICS_LIMIT
 from utils import (
     CHARS_ASCII,
+    chunk,
     task_wrapper,
     create_nonce,
     json_minify,
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from collections import abc
 
     from twitch import Twitch
+    from gui import WebsocketStatus
     from constants import JsonType, WebsocketTopic
 
 
@@ -38,6 +40,7 @@ class Websocket:
     def __init__(self, pool: WebsocketPool, index: int):
         self._pool: WebsocketPool = pool
         self._twitch: Twitch = pool._twitch
+        self._ws_gui: WebsocketStatus = self._twitch.gui.websockets
         self._state_lock = asyncio.Lock()
         # websocket index
         self._idx: int = index
@@ -56,8 +59,8 @@ class Websocket:
         # topics stuff
         self.topics: dict[str, WebsocketTopic] = {}
         self._submitted: set[WebsocketTopic] = set()
-        # Log status instead of GUI
-        logger.debug(f"Websocket[{self._idx}] initialized")
+        # notify GUI
+        self.set_status(_("gui", "websocket", "disconnected"))
 
     @property
     def connected(self) -> bool:
@@ -67,11 +70,9 @@ class Websocket:
         return self._ws.wait()
 
     def set_status(self, status: str | None = None, refresh_topics: bool = False):
-        # For CLI version, log status changes instead of updating GUI
-        if status:
-            ws_logger.debug(f"Websocket[{self._idx}] status: {status}")
-        if refresh_topics:
-            ws_logger.debug(f"Websocket[{self._idx}] topics: {len(self.topics)}/{WS_TOPICS_LIMIT}")
+        self._twitch.gui.websockets.update(
+            self._idx, status=status, topics=(len(self.topics) if refresh_topics else None)
+        )
 
     def request_reconnect(self):
         # reset our ping interval, so we send a PING after reconnect right away
@@ -97,14 +98,13 @@ class Websocket:
                 self.set_status(_("gui", "websocket", "disconnecting"))
                 await ws.close()
             if self._handle_task is not None:
-                self._handle_task.cancel()
                 with suppress(asyncio.TimeoutError, asyncio.CancelledError):
                     await asyncio.wait_for(self._handle_task, timeout=2)
                 self._handle_task = None
             if remove:
                 self.topics.clear()
                 self._topics_changed.set()
-                logger.debug(f"Websocket[{self._idx}] removed")
+                self._twitch.gui.websockets.remove(self._idx)
 
     def stop_nowait(self, *, remove: bool = False):
         # weird syntax but that's what we get for using a decorator for this
@@ -211,30 +211,32 @@ class Websocket:
         if removed:
             topics_list = list(map(str, removed))
             ws_logger.debug(f"Websocket[{self._idx}]: Removing topics: {', '.join(topics_list)}")
-            await self.send(
-                {
-                    "type": "UNLISTEN",
-                    "data": {
-                        "topics": topics_list,
-                        "auth_token": auth_state.access_token,
+            for topics in chunk(topics_list, 20):
+                await self.send(
+                    {
+                        "type": "UNLISTEN",
+                        "data": {
+                            "topics": topics,
+                            "auth_token": auth_state.access_token,
+                        }
                     }
-                }
-            )
+                )
             self._submitted.difference_update(removed)
         # handle added topics
         added = current.difference(self._submitted)
         if added:
             topics_list = list(map(str, added))
             ws_logger.debug(f"Websocket[{self._idx}]: Adding topics: {', '.join(topics_list)}")
-            await self.send(
-                {
-                    "type": "LISTEN",
-                    "data": {
-                        "topics": topics_list,
-                        "auth_token": auth_state.access_token,
+            for topics in chunk(topics_list, 20):
+                await self.send(
+                    {
+                        "type": "LISTEN",
+                        "data": {
+                            "topics": topics,
+                            "auth_token": auth_state.access_token,
+                        }
                     }
-                }
-            )
+                )
             self._submitted.update(added)
 
     async def _gather_recv(self, messages: list[JsonType], timeout: float = 0.5):
@@ -340,17 +342,11 @@ class WebsocketPool:
 
     async def start(self):
         self._running.set()
-        if self.websockets:
-            logger.info(f"Starting {len(self.websockets)} websocket connections...")
-            await asyncio.gather(*(ws.start() for ws in self.websockets))
-        else:
-            logger.debug("No websockets to start")
+        await asyncio.gather(*(ws.start() for ws in self.websockets))
 
     async def stop(self, *, clear_topics: bool = False):
         self._running.clear()
-        if self.websockets:
-            logger.info("Stopping websocket connections...")
-            await asyncio.gather(*(ws.stop(remove=clear_topics) for ws in self.websockets))
+        await asyncio.gather(*(ws.stop(remove=clear_topics) for ws in self.websockets))
 
     def add_topics(self, topics: abc.Iterable[WebsocketTopic]):
         # ensure no topics end up duplicated
@@ -372,7 +368,6 @@ class WebsocketPool:
                 if self.running:
                     ws.start_nowait()
                 self.websockets.append(ws)
-                logger.debug(f"Created websocket[{ws_idx}]")
             # ask websocket to take any topics it can - this modifies the set in-place
             ws.add_topics(topics_set)
             # see if there's any leftover topics for the next websocket connection
@@ -397,7 +392,6 @@ class WebsocketPool:
                 ws = self.websockets.pop()
                 recycled_topics.extend(ws.topics.values())
                 ws.stop_nowait(remove=True)
-                logger.debug(f"Removed websocket[{ws._idx}] due to low topic count")
             else:
                 break
         if recycled_topics:

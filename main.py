@@ -106,13 +106,13 @@ if __name__ == "__main__":
         #     # this language doesn't exist - stick to English
         #     pass
 
-        # handle logging stuff
+        print("1")
         logger = logging.getLogger("TwitchDrops")
         logger.setLevel(settings.logging_level)
-        
+        print("2")
         # Clear any existing handlers to avoid conflicts
         logger.handlers.clear()
-        
+        print("3")
         # Setup console handler for CLI output
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(logging.Formatter(
@@ -120,34 +120,39 @@ if __name__ == "__main__":
             style='{',
             datefmt="%H:%M:%S"
         ))
+        print("4")
         logger.addHandler(console_handler)
-        
+        print("5")
         if settings.log:
             handler = logging.FileHandler(LOG_PATH)
             handler.setFormatter(FILE_FORMATTER)
             logger.addHandler(handler)
-            
+        print("6")
         # Disable root logger to prevent double messages
         if settings.logging_level > logging.DEBUG:
             logging.getLogger().setLevel(logging.WARNING)
         else:
             logging.getLogger().setLevel(logging.DEBUG)
-            
+        print("7")
         logging.getLogger("TwitchDrops.gql").setLevel(settings.debug_gql)
         logging.getLogger("TwitchDrops.websocket").setLevel(settings.debug_ws)
-
+        print("8")
         if (logging_level := logger.getEffectiveLevel()) < logging.ERROR:
             logger.info(f"Logging level: {logging.getLevelName(logging_level)}")
 
+        print("9")
         exit_status = 0
         client = Twitch(settings)
         loop = asyncio.get_running_loop()
-        
+
+        print("10")
         # Setup signal handlers for clean shutdown
         def signal_handler():
             logger.info("Received shutdown signal, stopping...")
             client.close()
-            
+
+        print("11")
+        
         if sys.platform != "win32":
             loop.add_signal_handler(signal.SIGINT, signal_handler)
             loop.add_signal_handler(signal.SIGTERM, signal_handler)
@@ -158,15 +163,19 @@ if __name__ == "__main__":
                     loop.run_forever()
                 except KeyboardInterrupt:
                     signal_handler()
-            
+
+        print("12")
+        
         try:
             logger.info("Starting Twitch Drops Miner...")
             logger.info("Use Ctrl+C to stop the application")
             await client.run()
+            print("13")
         except CaptchaRequired:
             exit_status = 1
             client.prevent_close()
             logger.error(_("error", "captcha"))
+            print("14")
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
         except Exception:
@@ -174,16 +183,19 @@ if __name__ == "__main__":
             client.prevent_close()
             logger.error("Fatal error encountered:")
             logger.error(traceback.format_exc())
+            print("15")
         finally:
             if sys.platform != "win32":
                 loop.remove_signal_handler(signal.SIGINT)
                 loop.remove_signal_handler(signal.SIGTERM)
             logger.info(_("gui", "status", "exiting"))
             await client.shutdown()
+            print("16")
             
         if not client.close_requested:
             logger.info(_("status", "terminated"))
-            
+
+        print("17")
         # save the application state
         client.save(force=True)
         sys.exit(exit_status)

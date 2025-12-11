@@ -402,12 +402,6 @@ class Twitch:
         """
         logger.info(message)
 
-    def save(self, *, force: bool = False) -> None:
-        """
-        Saves the application state.
-        """
-        self.settings.save(force=force)
-
     def get_priority(self, channel: Channel) -> int:
         """
         Return a priority number for a given channel.
@@ -483,8 +477,6 @@ class Twitch:
                 # ensure the websocket is running
                 await self.websocket.start()
                 await self.fetch_inventory()
-                # Save state on every inventory fetch
-                self.save()
                 self.change_state(State.GAMES_UPDATE)
             elif self._state is State.GAMES_UPDATE:
                 # claim drops from expired and active campaigns

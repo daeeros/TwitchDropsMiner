@@ -193,8 +193,6 @@ if __name__ == "__main__":
         if not client.close_requested:
             logger.info(_("status", "terminated"))
             
-        # save the application state
-        client.save(force=True)
         sys.exit(exit_status)
 
     try:

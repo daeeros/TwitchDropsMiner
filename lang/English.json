@@ -1,0 +1,56 @@
+{
+    "english_name": "English",
+    "status": {
+        "terminated": "\nApplication Terminated.\nClose the window to exit the application.",
+        "watching": "Watching: {channel}",
+        "goes_online": "{channel} goes ONLINE, switching...",
+        "goes_offline": "{channel} goes OFFLINE, switching...",
+        "claimed_drop": "Claimed drop: {drop}",
+        "no_channel": "No available channels to watch. Waiting for an ONLINE channel...",
+        "no_campaign": "No active campaigns to mine drops for. Waiting for an active campaign..."
+    },
+    "login": {
+        "unexpected_content": "Unexpected content type returned, usually due to being redirected. Do you need to login for internet access?",
+        "chrome": {
+            "startup": "Opening Chrome...",
+            "login_to_complete": "Complete the login procedure manually by pressing the Login button again.",
+            "no_token": "No authorization token could be found.",
+            "closed_window": "The Chrome window was closed before the login procedure could be completed."
+        },
+        "error_code": "Login error code: {error_code}",
+        "incorrect_login_pass": "Incorrect username or password.",
+        "incorrect_email_code": "Incorrect email code.",
+        "incorrect_twofa_code": "Incorrect 2FA code.",
+        "email_code_required": "Email code required. Check your email.",
+        "twofa_code_required": "2FA token required."
+    },
+    "error": {
+        "captcha": "Your login attempt was denied by CAPTCHA.\nPlease try again in 12+ hours.",
+        "site_down": "Twitch is down, retrying in {seconds} seconds...",
+        "no_connection": "Cannot connect to Twitch, retrying in {seconds} seconds..."
+    },
+    "gui": {
+        "status": {
+            "name": "Status",
+            "idle": "Idle",
+            "exiting": "Exiting...",
+            "terminated": "Terminated",
+            "cleanup": "Cleaning up channels...",
+            "gathering": "Gathering channels...",
+            "switching": "Switching the channel...",
+            "fetching_inventory": "Fetching inventory...",
+            "fetching_campaigns": "Fetching campaigns...",
+            "adding_campaigns": "Adding campaigns to inventory... {counter}"
+        },
+        "websocket": {
+            "name": "Websocket Status",
+            "websocket": "Websocket #{id}:",
+            "initializing": "Initializing...",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "connecting": "Connecting...",
+            "disconnecting": "Disconnecting...",
+            "reconnecting": "Reconnecting..."
+        }
+    }
+}

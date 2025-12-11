@@ -16,7 +16,7 @@ __pycache__
 log.txt
 /dump.dat
 /lock.file
-/lang/English.json
+# /lang/English.json
 # AppImage
 /AppDir
 /appimage-builder

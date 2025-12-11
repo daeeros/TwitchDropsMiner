@@ -87,7 +87,7 @@ if __name__ == "__main__":
     )
 
     default_args = ParsedArgs()
-    default_args._verbose = 4
+    default_args._verbose = 3
     default_args._debug_ws = False
     default_args._debug_gql = False
     default_args.log = True

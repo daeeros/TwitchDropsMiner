@@ -99,12 +99,12 @@ if __name__ == "__main__":
     async def main():
         print("Application starting...")  # Тестовое сообщение
         
-        # set language
-        try:
-            _.set_language(settings.language)
-        except ValueError:
-            # this language doesn't exist - stick to English
-            pass
+        # # set language
+        # try:
+        #     _.set_language(settings.language)
+        # except ValueError:
+        #     # this language doesn't exist - stick to English
+        #     pass
 
         # handle logging stuff
         logger = logging.getLogger("TwitchDrops")

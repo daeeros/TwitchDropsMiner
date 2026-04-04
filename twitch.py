@@ -1050,7 +1050,7 @@ class Twitch:
                 # connection problems, retry
                 if backoff.steps > 1:
                     # just so that quick retries that sometimes happen, aren't shown
-                    logger.info(_("error", "no_connection").format(seconds=round(delay)))
+                    logger.info(_("error", "no_connection").format(seconds=round(delay), url=str(url)))
             finally:
                 if response is not None:
                     response.release()
@@ -1097,8 +1097,8 @@ class Twitch:
                             if (
                                 single_retry
                                 and error_dict["message"] in (
-                                    "service error"
-                                    "PersistedQueryNotFound"
+                                    "service error",
+                                    "PersistedQueryNotFound",
                                 )
                             ):
                                 logger.error(

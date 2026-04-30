@@ -100,6 +100,8 @@ CHARS_ASCII = string.ascii_letters + string.digits
 CHARS_HEX_LOWER = string.digits + "abcdef"
 CHARS_HEX_UPPER = string.digits + "ABCDEF"
 
+def isonow() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", 'Z')
 
 def create_nonce(chars: str, length: int) -> str:
     return ''.join(random.choices(chars, k=length))

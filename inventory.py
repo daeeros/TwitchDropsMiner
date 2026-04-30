@@ -301,7 +301,7 @@ class TimedDrop(BaseDrop):
             logger.debug(f"Drop progress: {progress_text}")
 
     def _update_real_minutes(self, delta: int) -> None:
-        if delta == 0 or self.real_current_minutes + delta < 0 or not self.can_earn():
+        if delta == 0 or self.real_current_minutes + delta < 0:
             return
         if self.real_current_minutes + delta < self.required_minutes:
             self.real_current_minutes += delta

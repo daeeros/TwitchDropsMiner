@@ -399,7 +399,7 @@ GQL_QUERIES: dict[str, GQLPersistedQuery] = {
     # returns live channels for a particular game
     "GameDirectory": GQLPersistedQuery(
         "DirectoryPage_Game",
-        "76cb069d835b8a02914c08dc42c421d0dafda8af5b113a3f19141824b901402f",
+        "86bcceb4e8b1a51256ff8eed8bd8aae4acacf80d737efe904f84f3aeadf8cafd",
         variables={
             "limit": 30,  # limit of channels returned
             "slug": ...,  # game slug

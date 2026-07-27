@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 class SettingsFile(TypedDict):
     proxy: URL
     language: str
+    watch_url: str
     exclude: set[str]
     priority: list[str]
     connection_quality: int
@@ -26,6 +27,7 @@ default_settings: SettingsFile = {
     "proxy": URL(),
     "priority": [],
     "exclude": set(),
+    "watch_url": "",
     "connection_quality": 1,
     "language": DEFAULT_LANG,
     "priority_mode": PriorityMode.PRIORITY_ONLY,
@@ -45,6 +47,9 @@ class Settings:
     # from settings file
     proxy: URL
     language: str
+    # empty: auto-detect the watch event URL and fall back between the known hosts
+    # non-empty: always use this exact URL, without any fallbacks
+    watch_url: str
     exclude: set[str]
     priority: list[str]
     connection_quality: int

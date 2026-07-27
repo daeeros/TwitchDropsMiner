@@ -128,6 +128,15 @@ PING_INTERVAL = timedelta(minutes=3)
 PING_TIMEOUT = timedelta(seconds=10)
 ONLINE_DELAY = timedelta(seconds=120)
 WATCH_INTERVAL = timedelta(seconds=59)
+# Watch event ("spade") service URLs. All three point at the same internal Twitch service,
+# and are used as fallbacks for each other, since these domains often end up on ad-blocking
+# and tracker lists, or get filtered by an ISP. The one the site actually uses is normally
+# extracted from the streamer's page - these are only the known alternatives.
+SPADE_HOSTS: tuple[URLType, ...] = (
+    URLType("https://spade.twitch.tv/track"),
+    URLType("https://trowel.twitch.tv/track"),
+    URLType("https://beacon.twitch.tv/track"),
+)
 # Strings
 WINDOW_TITLE = f"Twitch Drops Miner v{__version__} (by DevilXD)"
 # Logging

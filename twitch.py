@@ -44,8 +44,10 @@ from constants import (
     COOKIES_PATH,
     GQL_QUERIES,
     MAX_CHANNELS,
+    SPADE_HOSTS,
     WATCH_INTERVAL,
     State,
+    URLType,
     ClientType,
     PriorityMode,
     WebsocketTopic,
@@ -289,6 +291,11 @@ class Twitch:
         self.watching_channel: AwaitableValue[Channel] = AwaitableValue()
         self._watching_task: asyncio.Task[None] | None = None
         self._watching_restart = asyncio.Event()
+        # Watch event ("spade") URL: the one currently in use, the one we've detected
+        # off the streamer's page, and the alternatives left to try if the current one is blocked
+        self._watch_url: URLType | None = None
+        self._watch_url_detected: URLType | None = None
+        self._watch_url_pool: list[URLType] = []
         # Websocket
         self.websocket = WebsocketPool(self)
         # Maintenance task
@@ -448,6 +455,9 @@ class Twitch:
         """
         auth_state = await self.get_auth()
         await self.websocket.start()
+        # NOTE: the watch URL is re-detected on each new run, in case Twitch has changed it
+        self._watch_url = self._watch_url_detected = None
+        self._watch_url_pool = []
         # NOTE: watch task is explicitly restarted on each new run
         if self._watching_task is not None:
             self._watching_task.cancel()
@@ -689,6 +699,62 @@ class Twitch:
         self._watching_restart.clear()
         with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._watching_restart.wait(), timeout=delay)
+
+    async def get_watch_url(self, channel: Channel) -> URLType:
+        """
+        Return the URL the watch payloads are to be sent to.
+
+        The URL is the same for every channel, so it's resolved once and then reused.
+        If the user has pinned one via the settings, it's used as-is, without any fallbacks.
+        """
+        if self._watch_url is not None:
+            return self._watch_url
+        pinned: str = self.settings.watch_url
+        if pinned:
+            logger.info(f"Using the watch URL from settings: {pinned}")
+            self._watch_url = self._watch_url_detected = URLType(pinned)
+            self._watch_url_pool = []
+        else:
+            try:
+                detected: URLType = await channel.get_spade_url()
+                logger.debug(f"Detected watch URL: {detected}")
+            except MinerException:
+                # the page layout has changed - fall back onto the known URLs instead of dying
+                detected = SPADE_HOSTS[0]
+                logger.warning(f"Couldn't detect the watch URL, falling back to: {detected}")
+            self._watch_url = self._watch_url_detected = detected
+            self._watch_url_pool = [url for url in SPADE_HOSTS if url != detected]
+        return self._watch_url
+
+    def rotate_watch_url(self) -> bool:
+        """
+        Called when the current watch URL appears to be unreachable, most likely because
+        it's being blocked by an ad blocker, a DNS filter or an ISP.
+
+        Switches over to the next known alternative and returns `True`.
+        Returns `False` once all of the alternatives have been tried, at which point we go back
+        to the original URL - if whatever is blocking it ever goes away, we'll recover on our own.
+        """
+        failed: URLType | None = self._watch_url
+        if self._watch_url_pool:
+            self._watch_url = self._watch_url_pool.pop(0)
+            logger.warning(
+                f"Watch URL appears to be blocked: {failed}, switching over to: {self._watch_url}"
+            )
+            return True
+        if self._watch_url_detected is not None and failed != self._watch_url_detected:
+            # we've exhausted the alternatives - go back to the URL we've started with
+            logger.error(
+                "None of the known watch URLs could be reached - something on this computer "
+                "or network is most likely blocking them. See the wiki for more information: "
+                "https://github.com/DevilXD/TwitchDropsMiner/wiki/Troubleshooting"
+                "#the-cannot-connect-to-twitch-retrying-in-x-seconds-message"
+            )
+            self._watch_url = self._watch_url_detected
+            self._watch_url_pool = [
+                url for url in SPADE_HOSTS if url != self._watch_url_detected
+            ]
+        return False
 
     @task_wrapper(critical=True)
     async def _watch_loop(self) -> NoReturn:
@@ -1011,8 +1077,18 @@ class Twitch:
 
     @asynccontextmanager
     async def request(
-        self, method: str, url: URL | str, *, invalidate_after: datetime | None = None, **kwargs
+        self,
+        method: str,
+        url: URL | str,
+        *,
+        invalidate_after: datetime | None = None,
+        attempts: int | None = None,
+        **kwargs,
     ) -> abc.AsyncIterator[aiohttp.ClientResponse]:
+        """
+        `attempts` limits how many times the request is going to be retried before giving up
+        with a `RequestException`. `None` (the default) means retrying indefinitely.
+        """
         session = await self.get_session()
         method = method.upper()
         if self.settings.proxy and "proxy" not in kwargs:
@@ -1020,6 +1096,7 @@ class Twitch:
         logger.debug(f"Request: ({method=}, {url=}, {kwargs=})")
         session_timeout = timedelta(seconds=session.timeout.total or 0)
         backoff = ExponentialBackoff(maximum=3*60)
+        attempt: int = 0
         for delay in backoff:
             if self.close_requested:
                 raise ExitRequest()
@@ -1029,6 +1106,7 @@ class Twitch:
                 and datetime.now(timezone.utc) >= (invalidate_after - session_timeout)
             ):
                 raise RequestInvalid()
+            attempt += 1
             try:
                 response: aiohttp.ClientResponse | None = None
                 # For CLI we don't have gui.coro_unless_closed, so use simple request
@@ -1054,6 +1132,10 @@ class Twitch:
             finally:
                 if response is not None:
                     response.release()
+            if attempts is not None and attempt >= attempts:
+                raise RequestException(
+                    f"Request to {url} has failed after {attempt} attempt(s)"
+                )
             # For CLI we use simple sleep instead of waiting for close event
             await asyncio.sleep(delay)
 

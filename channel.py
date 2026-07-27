@@ -43,29 +43,8 @@ class Stream:
         self._stream_url: URLType | None = None
 
     @cached_property
-    def _spade_payload(self) -> JsonType:
-        payload = [
-            {
-                "event": "minute-watched",
-                "properties": {
-                    "broadcast_id": str(self.broadcast_id),
-                    "channel_id": str(self.channel.id),
-                    "channel": self.channel._login,
-                    "hidden": False,
-                    "live": True,
-                    "location": "channel",
-                    "logged_in": True,
-                    "muted": False,
-                    "player": "site",
-                    "user_id": self.channel._twitch._auth_state.user_id,
-                }
-            }
-        ]
-        return {"data": (b64encode(json_minify(payload).encode("utf8"))).decode("utf8")}
-
-    @cached_property
-    def _gql_payload(self) -> GQLQuery:
-        payload = [
+    def _watch_payload(self) -> list[JsonType]:
+        return [
             {
                 "event": "minute-watched",
                 "properties": {
@@ -85,14 +64,24 @@ class Stream:
                 }
             }
         ]
+
+    @cached_property
+    def spade_payload(self) -> JsonType:
+        return {
+            "data": (b64encode(json_minify(self._watch_payload).encode("utf8"))).decode("utf8")
+        }
+
+    @cached_property
+    def gql_payload(self) -> GQLQuery:
         return GQLQuery(
             (
                 "\n mutation SendEvents($input: SendSpadeEventsInput!) "
                 "{\n sendSpadeEvents(input: $input) {\n statusCode\n}\n}\n"
             ),
-            b64encode(gzip.compress(json_minify(payload).encode("utf8"))).decode("utf8")
+            b64encode(
+                gzip.compress(json_minify(self._watch_payload).encode("utf8"))
+            ).decode("utf8")
         )
-
 
     @classmethod
     def from_get_stream(cls, channel: Channel, channel_data: JsonType) -> Stream:
@@ -170,7 +159,7 @@ class Stream:
 
 class Channel:
     __slots__ = (
-        "_twitch", "id", "_login", "_display_name", "_spade_url",
+        "_twitch", "id", "_login", "_display_name",
         "_stream", "_pending_stream_up", "acl_based"
     )
 
@@ -187,7 +176,6 @@ class Channel:
         self.id: int = int(id)
         self._login: str = login
         self._display_name: str | None = display_name
-        self._spade_url: URLType | None = None
         self._stream: Stream | None = None
         self._pending_stream_up: asyncio.Task[Any] | None = None
         # ACL-based channels are:
@@ -500,31 +488,43 @@ class Channel:
         async with self._twitch.request("HEAD", stream_chunk_url) as head_response:
             return head_response.status == 200
 
-    async def _send_watch_spade(self) -> bool:
-        if self._stream is None:
-            return False
-        if self._spade_url is None:
-            self._spade_url = await self.get_spade_url()
-        try:
-            async with self._twitch.request(
-                "POST", self._spade_url, data=self._stream._spade_payload
-            ) as response:
-                success = response.status == 204
-                if success:
-                    logger.debug(f"Successfully sent watch payload to: {self.name}")
-                else:
-                    logger.warning(f"Failed to send watch payload to: {self.name} (status: {response.status})")
-                return success
-        except RequestException:
-            logger.warning(f"Request exception while sending watch payload to: {self.name}")
-            return False
+    async def send_watch(self) -> bool:
+        """
+        This sends the watch payload to Twitch's watch event service, to advance the drops.
 
-    
-    async def send_watch(self) -> bool:  # send_watch_gql
+        If the URL in use turns out to be unreachable - which usually means it's being blocked
+        by an ad blocker, a DNS filter or an ISP - we rotate over to the next known one
+        and try again, instead of retrying the same dead URL forever.
+        """
+        if self._stream is None:
+            return False
+        while True:
+            watch_url: URLType = await self._twitch.get_watch_url(self)
+            try:
+                async with self._twitch.request(
+                    "POST", watch_url, data=self._stream.spade_payload, attempts=2
+                ) as response:
+                    if response.status == 204:
+                        logger.debug(f"Successfully sent watch payload to: {self.name}")
+                        return True
+                    logger.warning(
+                        f"Failed to send watch payload to: {self.name} "
+                        f"(status: {response.status})"
+                    )
+            except RequestException:
+                logger.warning(
+                    f"Request exception while sending watch payload to: "
+                    f"{self.name} ({watch_url})"
+                )
+            if not self._twitch.rotate_watch_url():
+                return False
+
+    # NOTE: This is currently unused.
+    async def _send_watch_gql(self) -> bool:
         if self._stream is None:
             return False
         try:
-            watch_response = await self._twitch.gql_request(self._stream._gql_payload)
+            watch_response = await self._twitch.gql_request(self._stream.gql_payload)
             return watch_response["data"]["sendSpadeEvents"]["statusCode"] == 204
         except RequestException:
             return False

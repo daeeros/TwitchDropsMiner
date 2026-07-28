@@ -164,24 +164,12 @@ class KickMiner:
         priority_mode: PriorityMode = self.settings.priority_mode
         now = datetime.now(timezone.utc)
 
-        wanted: list[KickCampaign] = []
-        skipped: list[str] = []
-        for campaign in self.campaigns:
-            if campaign.finished:
-                continue
-            if campaign.game in exclude:
-                skipped.append(f"\"{campaign.name}\" ({campaign.game}): excluded")
-            elif campaign.game not in priority:
-                skipped.append(
-                    f"\"{campaign.name}\": add \"{campaign.game}\" to 'priority' "
-                    "in settings.json to mine it"
-                )
-            else:
-                wanted.append(campaign)
-        if not wanted and skipped:
-            # otherwise "nothing to mine" reads like Kick has no campaigns at all
-            for reason in skipped:
-                logger.info(f"Kick: skipping {reason}")
+        wanted: list[KickCampaign] = [
+            campaign for campaign in self.campaigns
+            if not campaign.finished
+            and campaign.game in priority
+            and campaign.game not in exclude
+        ]
         if priority_mode is PriorityMode.ENDING_SOONEST:
             wanted.sort(
                 key=lambda c: (c.ends_at - now).total_seconds() if c.ends_at else MAX_INT

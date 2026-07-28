@@ -4,7 +4,8 @@ import sys
 import html
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from collections import deque
+from typing import Any, TYPE_CHECKING
 
 import aiohttp
 
@@ -12,40 +13,50 @@ if TYPE_CHECKING:
     pass
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+# room taken by the <pre></pre> wrapper
+PRE_WRAPPER_LENGTH = len("<pre></pre>")
+# a single runaway line (a traceback, a dumped payload) must not eat the whole window
+MAX_LINE_LENGTH = 512
 
 
 class TelegramHandler(logging.Handler):
     """
-    Async logging handler that batches log messages and sends them
-    to a Telegram chat every `flush_interval` seconds as a single message.
+    Async logging handler that keeps a single "live" Telegram message and edits it in place,
+    so the chat shows a rolling tail of the last `tail_lines` log lines instead of a wall
+    of message fragments.
+
+    A new message is only posted when the current one can no longer be edited.
     """
 
     def __init__(
         self,
         bot_token: str,
         chat_id: str,
-        flush_interval: float = 5.0,
+        update_interval: float = 3.0,
+        tail_lines: int = 50,
         level: int = logging.NOTSET,
     ):
         super().__init__(level)
-        self._bot_token = bot_token
         self._chat_id = chat_id
-        self._flush_interval = flush_interval
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
+        self._update_interval = update_interval
+        # NOTE: emit() can be called from any thread - deque.append is atomic, unlike
+        # putting onto an asyncio.Queue, which is what this used to do
+        self._lines: deque[str] = deque(maxlen=tail_lines)
         self._session: aiohttp.ClientSession | None = None
         self._task: asyncio.Task[None] | None = None
-        self._api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        self._message_id: int | None = None
+        self._sent_text: str | None = None
+        self._api_url = f"https://api.telegram.org/bot{bot_token}"
 
     def start(self) -> None:
-        """Start the background flush loop. Must be called from an async context."""
+        """Start the background update loop. Must be called from an async context."""
         if self._task is None:
-            self._task = asyncio.create_task(self._flush_loop())
+            self._task = asyncio.create_task(self._update_loop())
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Put a formatted log record into the queue for batched sending."""
+        """Add a formatted log record to the tail."""
         try:
-            msg = self.format(record)
-            self._queue.put_nowait(msg)
+            self._lines.append(self.format(record))
         except Exception:
             self.handleError(record)
 
@@ -56,97 +67,122 @@ class TelegramHandler(logging.Handler):
             )
         return self._session
 
-    async def _flush_loop(self) -> None:
-        """Background task: waits `flush_interval` seconds, collects all queued
-        messages, and sends them as one (or more) Telegram messages."""
+    async def _update_loop(self) -> None:
         while True:
             try:
-                await asyncio.sleep(self._flush_interval)
-                await self._flush()
+                await asyncio.sleep(self._update_interval)
+                await self._update()
             except asyncio.CancelledError:
-                # Final flush before exiting
-                await self._flush()
+                # one final update, so the last lines before the shutdown are visible
+                await self._update()
                 break
             except Exception as exc:
-                # Print to stderr to avoid recursion into this handler
-                print(
-                    f"[TelegramHandler] Error in flush loop: {exc}",
-                    file=sys.stderr,
-                )
+                # print to stderr to avoid recursing back into this handler
+                print(f"[TelegramHandler] Error in update loop: {exc}", file=sys.stderr)
 
-    async def _flush(self) -> None:
-        """Drain the queue and send all accumulated messages."""
-        lines: list[str] = []
-        while not self._queue.empty():
-            try:
-                lines.append(self._queue.get_nowait())
-            except asyncio.QueueEmpty:
-                break
+    def _render(self) -> str:
+        """
+        Build the message body out of the buffered lines.
 
-        if not lines:
-            return
-
-        # Combine all lines, escape HTML, and wrap in <pre> block
+        This is a tail view, so when it doesn't fit, the oldest lines go first.
+        """
+        lines = [
+            line if len(line) <= MAX_LINE_LENGTH else f"{line[:MAX_LINE_LENGTH]}..."
+            for line in self._lines
+        ]
+        # NOTE: escaping can grow the text (& -> &amp;), so the limit is checked on the
+        # escaped result, not on the raw one
+        limit = TELEGRAM_MAX_MESSAGE_LENGTH - PRE_WRAPPER_LENGTH
         escaped = html.escape("\n".join(lines))
-        full_text = f"<pre>{escaped}</pre>"
+        while lines and len(escaped) > limit:
+            del lines[0]
+            escaped = html.escape("\n".join(lines))
+        return escaped
 
-        # Split into chunks respecting Telegram's 4096 char limit
-        # Account for <pre></pre> tags (11 chars) when splitting
-        max_content = TELEGRAM_MAX_MESSAGE_LENGTH - 13  # <pre>...</pre>
-        content = escaped
-        parts = self._split_text(content, max_content)
-        for part in parts:
-            await self._send_message(f"<pre>{part}</pre>")
+    async def _update(self) -> None:
+        """Push the current tail into the live message, posting one if there isn't any."""
+        content = self._render()
+        if not content or content == self._sent_text:
+            # nothing new to show: no request at all. This is also what keeps Telegram's
+            # "message is not modified" error from ever happening.
+            return
+        text = f"<pre>{content}</pre>"
 
-    @staticmethod
-    def _split_text(text: str, max_length: int) -> list[str]:
-        """Split a long text into chunks of at most `max_length` characters,
-        splitting on newline boundaries where possible."""
-        if len(text) <= max_length:
-            return [text]
+        if self._message_id is not None:
+            outcome = await self._api_call(
+                "editMessageText",
+                {
+                    "chat_id": self._chat_id,
+                    "message_id": self._message_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+            )
+            if outcome is not None:
+                self._sent_text = content
+                return
+            if self._message_id is not None:
+                # throttled or offline: keep the message and try again on the next tick
+                return
+            # the message turned out to be uneditable - fall through and post a new one
 
-        chunks: list[str] = []
-        while text:
-            if len(text) <= max_length:
-                chunks.append(text)
-                break
-
-            # Try to split at the last newline within the limit
-            split_pos = text.rfind("\n", 0, max_length)
-            if split_pos == -1:
-                # No newline found, hard split
-                split_pos = max_length
-
-            chunks.append(text[:split_pos])
-            text = text[split_pos:].lstrip("\n")
-
-        return chunks
-
-    async def _send_message(self, text: str) -> None:
-        """Send a single message to the Telegram chat."""
-        try:
-            session = await self._get_session()
-            payload = {
+        outcome = await self._api_call(
+            "sendMessage",
+            {
                 "chat_id": self._chat_id,
                 "text": text,
                 "parse_mode": "HTML",
                 "disable_web_page_preview": True,
-            }
-            async with session.post(self._api_url, json=payload) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
+            },
+        )
+        if outcome is not None:
+            self._message_id = outcome.get("message_id")
+            self._sent_text = content
+
+    async def _api_call(self, method: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """
+        Call the Telegram API. Returns the result on success, `None` on any failure.
+
+        Failures are not all equal, and the difference decides whether we keep editing the
+        current message or start a new one:
+          • 429 - we're being throttled. Wait it out, the message is still fine.
+          • network trouble - nothing to conclude about the message, retry later.
+          • anything else (400, 403...) - the message can't be edited any more, so `_message_id`
+            is cleared and the caller posts a fresh one.
+        """
+        try:
+            session = await self._get_session()
+            async with session.post(f"{self._api_url}/{method}", json=payload) as response:
+                body: dict[str, Any] = await response.json()
+                if response.status == 200:
+                    # editMessageText can answer with a plain `true` instead of a Message
+                    result = body.get("result")
+                    return result if isinstance(result, dict) else {}
+                if response.status == 429:
+                    retry_after = float(body.get("parameters", {}).get("retry_after", 1))
                     print(
-                        f"[TelegramHandler] Telegram API error {resp.status}: {body}",
+                        f"[TelegramHandler] rate limited, waiting {retry_after}s",
                         file=sys.stderr,
                     )
+                    await asyncio.sleep(retry_after)
+                    return None
+                print(
+                    f"[TelegramHandler] {method} failed with {response.status}: "
+                    f"{body.get('description', body)}",
+                    file=sys.stderr,
+                )
+                # the live message is unusable - the caller will post a new one
+                self._message_id = None
+                return None
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
-            print(
-                f"[TelegramHandler] Failed to send message: {exc}",
-                file=sys.stderr,
-            )
+            print(f"[TelegramHandler] {method} failed: {exc}", file=sys.stderr)
+            return None
 
     async def async_close(self) -> None:
-        """Gracefully stop the flush loop and close the HTTP session."""
+        """Gracefully stop the update loop and close the HTTP session."""
         if self._task is not None:
             self._task.cancel()
             try:
@@ -160,7 +196,7 @@ class TelegramHandler(logging.Handler):
             self._session = None
 
     def close(self) -> None:
-        """Override logging.Handler.close — schedule async cleanup if possible."""
+        """Override logging.Handler.close - schedule async cleanup if possible."""
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self.async_close())

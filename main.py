@@ -198,7 +198,8 @@ if __name__ == "__main__":
             telegram_handler = TelegramHandler(
                 bot_token=settings.telegram_bot_token,
                 chat_id=settings.telegram_chat_id,
-                flush_interval=5.0,
+                update_interval=3.0,
+                tail_lines=50,
             )
             telegram_handler.setFormatter(logging.Formatter(
                 "{asctime} {levelname}: {message}",

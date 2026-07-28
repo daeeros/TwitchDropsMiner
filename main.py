@@ -13,6 +13,7 @@ if __name__ == "__main__":
     import argparse
     import warnings
     import traceback
+    import contextlib
     from typing import NoReturn, TYPE_CHECKING
 
     import truststore
@@ -20,6 +21,7 @@ if __name__ == "__main__":
 
     from translate import _
     from twitch import Twitch
+    from kick import KickMiner
     from settings import Settings
     from version import __version__
     from exceptions import CaptchaRequired
@@ -44,6 +46,7 @@ if __name__ == "__main__":
         _debug_gql: bool
         log: bool
         dump: bool
+        kick_check: bool
 
         # TODO: replace int with union of literal values once typeshed updates
         @property
@@ -79,6 +82,12 @@ if __name__ == "__main__":
     parser.add_argument("-v", dest="_verbose", action="count", default=0)
     parser.add_argument("--log", action="store_true")
     parser.add_argument("--dump", action="store_true")
+    parser.add_argument(
+        "--kick-check",
+        dest="kick_check",
+        action="store_true",
+        help="list the current Kick drop campaigns and exit (no login required)",
+    )
 
     parser.add_argument(
         "--debug-ws", dest="_debug_ws", action="store_true", help=argparse.SUPPRESS
@@ -93,6 +102,7 @@ if __name__ == "__main__":
     default_args._debug_gql = False
     default_args.log = True
     default_args.dump = False
+    default_args.kick_check = False
 
     # парсер только дополняет/переопределяет эти значения, если что-то передано из CLI
     args = parser.parse_args(namespace=default_args)
@@ -103,6 +113,51 @@ if __name__ == "__main__":
     except Exception:
         print(f"Settings error: {traceback.format_exc()}", file=sys.stderr)
         sys.exit(4)
+
+    # Kick smoke test: fetches the campaign list (and progress, if a token is configured),
+    # prints it and exits. Doesn't need the Twitch login, nor the single-instance lock.
+    if args.kick_check:
+        async def kick_check() -> int:
+            from kick.auth import resolve_session_token
+            from kick.http import KickHTTP, KickRequestError
+            from kick.constants import CAMPAIGNS_URL, PROGRESS_URL, KICK_COOKIES_PATH
+            from kick.inventory import parse_campaigns, merge_progress
+
+            http = KickHTTP(settings)
+            try:
+                campaigns = parse_campaigns(await http.get_json(CAMPAIGNS_URL))
+            except KickRequestError as exc:
+                print(f"Kick: {exc}", file=sys.stderr)
+                return 1
+            active = [campaign for campaign in campaigns if campaign.active]
+            if (token := resolve_session_token()) is not None:
+                http.session_token = token
+                try:
+                    merge_progress(active, await http.get_json(PROGRESS_URL, auth=True))
+                    print("Session token: OK")
+                except KickRequestError as exc:
+                    print(f"Session token: FAILED ({exc})")
+            else:
+                print(
+                    f"Session token: not found - export your kick.com cookies to "
+                    f"{KICK_COOKIES_PATH} (progress unavailable)"
+                )
+            print(f"Campaigns: {len(active)} active out of {len(campaigns)} total")
+            for campaign in active:
+                where = (
+                    "any channel" if campaign.is_general
+                    else ', '.join(campaign.channels[:5]) + (
+                        f" (+{len(campaign.channels) - 5})" if len(campaign.channels) > 5 else ''
+                    )
+                )
+                print(f"\n  {campaign.game} | {campaign.name}")
+                print(f"    ends: {campaign.ends_at}  channels: {where}")
+                for reward in campaign.rewards:
+                    status = "claimed" if reward.claimed else f"{reward.progress}"
+                    print(f"    - {reward.name}: {status}/{reward.required_units} min")
+            return 0
+
+        sys.exit(asyncio.run(kick_check()))
 
     # client run
     async def main():
@@ -167,13 +222,21 @@ if __name__ == "__main__":
 
         exit_status = 0
         client = Twitch(settings)
+        # Kick mining runs next to Twitch, in the same loop. It's fully self-contained:
+        # its failures are logged and retried internally, and never affect Twitch mining.
+        kick_miner: KickMiner | None = None
+        kick_task: asyncio.Task[None] | None = None
+        if settings.kick_enabled:
+            kick_miner = KickMiner(settings)
         loop = asyncio.get_running_loop()
 
         # Setup signal handlers for clean shutdown
         def signal_handler():
             logger.info("Received shutdown signal, stopping...")
             client.close()
-        
+            if kick_miner is not None:
+                kick_miner.close()
+
         if sys.platform != "win32":
             loop.add_signal_handler(signal.SIGINT, signal_handler)
             loop.add_signal_handler(signal.SIGTERM, signal_handler)
@@ -188,6 +251,8 @@ if __name__ == "__main__":
         try:
             logger.info("Starting Twitch Drops Miner...")
             logger.info("Use Ctrl+C to stop the application")
+            if kick_miner is not None:
+                kick_task = asyncio.create_task(kick_miner.run())
             await client.run()
         except CaptchaRequired:
             exit_status = 1
@@ -205,6 +270,15 @@ if __name__ == "__main__":
                 loop.remove_signal_handler(signal.SIGINT)
                 loop.remove_signal_handler(signal.SIGTERM)
             logger.info(_("gui", "status", "exiting"))
+            # stop the Kick task before its session gets closed, not the other way around
+            if kick_miner is not None:
+                kick_miner.close()
+            if kick_task is not None:
+                kick_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await kick_task
+            if kick_miner is not None:
+                await kick_miner.shutdown()
             if telegram_handler is not None:
                 await telegram_handler.async_close()
             await client.shutdown()

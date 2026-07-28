@@ -4,6 +4,7 @@
         "__type": "set",
         "data": []
     },
+    "kick_enabled": false,
     "language": "English",
     "priority": [
         "Arena Breakout: Infinite",

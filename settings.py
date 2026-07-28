@@ -21,6 +21,7 @@ class SettingsFile(TypedDict):
     priority_mode: PriorityMode
     telegram_bot_token: str
     telegram_chat_id: str
+    kick_enabled: bool
 
 
 default_settings: SettingsFile = {
@@ -33,6 +34,7 @@ default_settings: SettingsFile = {
     "priority_mode": PriorityMode.PRIORITY_ONLY,
     "telegram_bot_token": "",
     "telegram_chat_id": "",
+    "kick_enabled": False,
 }
 
 
@@ -54,6 +56,9 @@ class Settings:
     priority: list[str]
     connection_quality: int
     priority_mode: PriorityMode
+    # Kick: mining runs alongside Twitch when enabled. Kick has no device-code login,
+    # so the session token is read from an exported kick_cookies.txt
+    kick_enabled: bool
 
     PASSTHROUGH = ("_settings", "_args", "_altered")
 

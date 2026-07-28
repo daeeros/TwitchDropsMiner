@@ -17,6 +17,8 @@ log.txt
 settings.json
 /dump.dat
 /lock.file
+# Kick auth: holds a live session cookie, must never be committed
+/kick_cookies.txt
 # /lang/English.json
 # AppImage
 /AppDir

@@ -57,7 +57,8 @@ class Settings:
     connection_quality: int
     priority_mode: PriorityMode
     # Kick: mining runs alongside Twitch when enabled. Kick has no device-code login,
-    # so the session token is read from an exported kick_cookies.txt
+    # so the session token is read from an exported kick_cookies.txt.
+    # NOTE: Kick only ever mines the games listed in 'priority' - see KickMiner._wanted_campaigns
     kick_enabled: bool
 
     PASSTHROUGH = ("_settings", "_args", "_altered")

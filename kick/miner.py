@@ -152,32 +152,45 @@ class KickMiner:
 
     def _wanted_campaigns(self) -> list[KickCampaign]:
         """
-        Filter and order the campaigns the same way the Twitch side does, reusing the very
-        same priority/exclude settings so both platforms follow one preference list.
+        Pick the campaigns worth mining.
+
+        Unlike the Twitch side, Kick always mines strictly what's listed in 'priority' -
+        the 'priority_mode' setting doesn't loosen that. Kick usually runs only a couple of
+        campaigns at a time, so an explicit list is the whole selection, not a preference.
+        The mode still decides the order among the listed games.
         """
         exclude: set[str] = self.settings.exclude
         priority: list[str] = self.settings.priority
         priority_mode: PriorityMode = self.settings.priority_mode
-        priority_only: bool = priority_mode is PriorityMode.PRIORITY_ONLY
         now = datetime.now(timezone.utc)
 
-        wanted = [
-            campaign for campaign in self.campaigns
-            if not campaign.finished
-            and campaign.game not in exclude
-            and (not priority_only or campaign.game in priority)
-        ]
-        if not priority_only:
-            if priority_mode is PriorityMode.ENDING_SOONEST:
-                wanted.sort(
-                    key=lambda c: (c.ends_at - now).total_seconds() if c.ends_at else MAX_INT
+        wanted: list[KickCampaign] = []
+        skipped: list[str] = []
+        for campaign in self.campaigns:
+            if campaign.finished:
+                continue
+            if campaign.game in exclude:
+                skipped.append(f"\"{campaign.name}\" ({campaign.game}): excluded")
+            elif campaign.game not in priority:
+                skipped.append(
+                    f"\"{campaign.name}\": add \"{campaign.game}\" to 'priority' "
+                    "in settings.json to mine it"
                 )
-            elif priority_mode is PriorityMode.LOW_AVBL_FIRST:
-                # Kick has no "availability" - the closest analogue is the cheapest reward left
-                wanted.sort(key=lambda c: _shortest_requirement(c))
-        wanted.sort(
-            key=lambda c: priority.index(c.game) if c.game in priority else MAX_INT
-        )
+            else:
+                wanted.append(campaign)
+        if not wanted and skipped:
+            # otherwise "nothing to mine" reads like Kick has no campaigns at all
+            for reason in skipped:
+                logger.info(f"Kick: skipping {reason}")
+        if priority_mode is PriorityMode.ENDING_SOONEST:
+            wanted.sort(
+                key=lambda c: (c.ends_at - now).total_seconds() if c.ends_at else MAX_INT
+            )
+        elif priority_mode is PriorityMode.LOW_AVBL_FIRST:
+            # Kick has no "availability" - the closest analogue is the cheapest reward left
+            wanted.sort(key=lambda c: _shortest_requirement(c))
+        # the priority list always wins over the mode's ordering
+        wanted.sort(key=lambda c: priority.index(c.game))
         return wanted
 
     # ------------------------------------------------------------------ channel selection

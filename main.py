@@ -6,6 +6,7 @@ from multiprocessing import freeze_support
 
 if __name__ == "__main__":
     freeze_support()
+    import io
     import sys
     import signal
     import asyncio
@@ -178,6 +179,10 @@ if __name__ == "__main__":
         logger.handlers.clear()
 
         # Setup console handler for CLI output
+        # Fix for Windows: wrap stdout with UTF-8 encoding to support emojis
+        if sys.stdout.encoding != 'utf-8':
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(logging.Formatter(
             "{asctime} {levelname}: {message}",
@@ -188,7 +193,7 @@ if __name__ == "__main__":
         logger.addHandler(console_handler)
 
         if settings.log:
-            handler = logging.FileHandler(LOG_PATH)
+            handler = logging.FileHandler(LOG_PATH, encoding='utf-8')
             handler.setFormatter(FILE_FORMATTER)
             logger.addHandler(handler)
 

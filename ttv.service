@@ -15,9 +15,9 @@ RestartSec=30
 KillMode=control-group
 TimeoutStopSec=30
 
-# no browser here, just aiohttp + websockets; the cap is a backstop on a 1 GB host
-MemoryHigh=400M
-MemoryMax=550M
+# no browser here, just aiohttp + websockets - it sits around 50 MB.
+# The ceiling is a leak backstop, not a budget.
+MemoryMax=1G
 OOMPolicy=stop
 
 # logs go to journald only: journalctl -u ttv -f

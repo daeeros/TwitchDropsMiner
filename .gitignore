@@ -26,3 +26,6 @@ settings.json
 /appimage-build
 /*.AppImage
 /*.AppImage.zsync
+
+# Twitch auth token — must never be committed
+/cookies.jar

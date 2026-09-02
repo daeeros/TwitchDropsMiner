@@ -1,0 +1,29 @@
+[Unit]
+Description=Twitch Drops Miner — mines timed drops on Twitch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/TwitchDropsMiner
+# a hard kill leaves the single-instance lock behind and blocks the next start
+ExecStartPre=/bin/rm -f /home/TwitchDropsMiner/lock.file
+ExecStart=/home/TwitchDropsMiner/venv/bin/python main.py
+Restart=always
+RestartSec=30
+KillMode=control-group
+TimeoutStopSec=30
+
+# no browser here, just aiohttp + websockets; the cap is a backstop on a 1 GB host
+MemoryHigh=400M
+MemoryMax=550M
+OOMPolicy=stop
+
+# logs go to journald only: journalctl -u twitchdrops -f
+SyslogIdentifier=twitchdrops
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+[Install]
+WantedBy=multi-user.target

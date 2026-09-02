@@ -7,7 +7,7 @@ from datetime import timedelta
 from constants import WORKING_DIR
 
 # Logger: a child of the main "TwitchDrops" logger, so it inherits every handler
-# main.py sets up - console, log file and Telegram - without any extra wiring.
+# main.py sets up - console and log file - without any extra wiring.
 logger = logging.getLogger("TwitchDrops.kick")
 
 # Paths

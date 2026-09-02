@@ -19,8 +19,6 @@ class SettingsFile(TypedDict):
     priority: list[str]
     connection_quality: int
     priority_mode: PriorityMode
-    telegram_bot_token: str
-    telegram_chat_id: str
     kick_enabled: bool
 
 
@@ -32,8 +30,6 @@ default_settings: SettingsFile = {
     "connection_quality": 1,
     "language": DEFAULT_LANG,
     "priority_mode": PriorityMode.PRIORITY_ONLY,
-    "telegram_bot_token": "",
-    "telegram_chat_id": "",
     "kick_enabled": False,
 }
 

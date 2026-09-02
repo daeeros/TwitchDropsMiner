@@ -27,7 +27,6 @@ if __name__ == "__main__":
     from exceptions import CaptchaRequired
     from utils import lock_file
     from constants import LOGGING_LEVELS, SELF_PATH, FILE_FORMATTER, LOG_PATH, LOCK_PATH
-    from telegram_logger import TelegramHandler
 
     if TYPE_CHECKING:
         pass
@@ -100,7 +99,9 @@ if __name__ == "__main__":
     default_args._verbose = 3
     default_args._debug_ws = False
     default_args._debug_gql = False
-    default_args.log = True
+    # console only by default: under systemd journald already stores and rotates
+    # the output, and log.txt has no rotation of its own. Pass --log to add the file.
+    default_args.log = False
     default_args.dump = False
     default_args.kick_check = False
 
@@ -192,23 +193,6 @@ if __name__ == "__main__":
             handler.setFormatter(FILE_FORMATTER)
             logger.addHandler(handler)
 
-        # Setup Telegram handler (if configured)
-        telegram_handler: TelegramHandler | None = None
-        if settings.telegram_bot_token and settings.telegram_chat_id:
-            telegram_handler = TelegramHandler(
-                bot_token=settings.telegram_bot_token,
-                chat_id=settings.telegram_chat_id,
-                update_interval=3.0,
-                tail_lines=50,
-            )
-            telegram_handler.setFormatter(logging.Formatter(
-                "{asctime} {levelname}: {message}",
-                style='{',
-                datefmt="%Y-%m-%d %H:%M:%S",
-            ))
-            logger.addHandler(telegram_handler)
-            telegram_handler.start()
-
         # Disable root logger to prevent double messages
         if settings.logging_level > logging.DEBUG:
             logging.getLogger().setLevel(logging.WARNING)
@@ -280,8 +264,6 @@ if __name__ == "__main__":
                     await kick_task
             if kick_miner is not None:
                 await kick_miner.shutdown()
-            if telegram_handler is not None:
-                await telegram_handler.async_close()
             await client.shutdown()
             
         if not client.close_requested:

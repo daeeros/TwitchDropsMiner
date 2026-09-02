@@ -20,8 +20,8 @@ MemoryHigh=400M
 MemoryMax=550M
 OOMPolicy=stop
 
-# logs go to journald only: journalctl -u twitchdrops -f
-SyslogIdentifier=twitchdrops
+# logs go to journald only: journalctl -u ttv -f
+SyslogIdentifier=ttv
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONIOENCODING=utf-8
 

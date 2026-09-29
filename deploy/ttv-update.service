@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull TwitchDropsMiner updates from GitHub and restart ttv
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/ttv-update
+SyslogIdentifier=ttv-update
+TimeoutStartSec=15min

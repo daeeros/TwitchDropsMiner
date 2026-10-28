@@ -759,6 +759,7 @@ class Twitch:
     @task_wrapper(critical=True)
     async def _watch_loop(self) -> NoReturn:
         interval: float = WATCH_INTERVAL.total_seconds()
+        last_check: float = 0
         while True:
             channel: Channel = await self.watching_channel.get()
             if not channel.online:
@@ -766,12 +767,19 @@ class Twitch:
                 self.stop_watching()
                 continue
             # logger.log(CALL, f"Sending watch payload to: {channel.name}")
-            succeeded: bool = await channel.send_watch()
             last_sent: float = time()
+            succeeded: bool = await channel.send_watch()
             if not succeeded:
                 logger.log(CALL, f"Watch requested failed for channel: {channel.name}")
-            # wait ~20 seconds for a progress update
-            await asyncio.sleep(20)
+            # wait ~15 seconds for a progress update
+            await asyncio.sleep(15 - min(time() - last_sent, 15))
+            # Watch requests go out every ~20s, but the progress check below bumps
+            # the minutes when GQL fails, so it has to run only about once a minute.
+            # (55s rather than 60s, so timing jitter can't push it a whole interval back)
+            if time() - last_check < 55:
+                await self._watch_sleep(interval - min(time() - last_sent, interval))
+                continue
+            last_check = time()
             # If the previous update was more than ~60s ago, and the progress tracker
             # isn't counting down anymore, that means Twitch has temporarily
             # stopped reporting drop's progress. To ensure the timer keeps at least somewhat
